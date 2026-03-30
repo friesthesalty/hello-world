@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+
+:root {
+    --bg-color: #0b0d10;
+    --text-color: #ffffff;
+    --primary-glow: rgba(79, 70, 229, 0.3);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Inter', -apple-system, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+    user-select: none;
+}
+
+main {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 0 20px;
+    width: 100%;
+}
+
+h1 {
+    font-size: 6rem;
+    font-weight: 800;
+    letter-spacing: -2px;
+    /* Text styling */
+    color: var(--text-color);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@media (max-width: 768px) {
+    h1 {
+        font-size: 3.5rem;
+        letter-spacing: -1px;
+    }
+}
+
+#fireworks {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
