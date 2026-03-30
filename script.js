@@ -41,8 +41,7 @@ function changeLanguage() {
     textElement.textContent = translations[currentIndex];
 }
 
-// Execute the changeLanguage function every 0.888 seconds
-setInterval(changeLanguage, 889);
+let languageInterval;
 
 // --- Fireworks Logic ---
 const canvas = document.getElementById('fireworks');
@@ -199,29 +198,29 @@ function loop() {
     }
 }
 
-loop();
-
-// --- Background Music Logic ---
+// --- Start Logic ---
 const bgMusic = document.getElementById("bg-music");
+let hasStarted = false;
 
-function playMusic() {
-    let playPromise = bgMusic.play();
-    if (playPromise !== undefined) {
-        playPromise.catch(error => {
-            // Autoplay blocked by browser. Wait for interaction.
-            const startMusic = () => {
-                bgMusic.play();
-                document.removeEventListener('click', startMusic);
-                document.removeEventListener('keydown', startMusic);
-            };
-            document.addEventListener('click', startMusic);
-            document.addEventListener('keydown', startMusic);
-        });
-    }
+function startExperience() {
+    if (hasStarted) return;
+    hasStarted = true;
+    
+    // Play music
+    bgMusic.play().catch(e => console.log("Audio play failed:", e));
+    
+    // Start initial language text
+    currentIndex = getNextLanguageIndex();
+    textElement.textContent = translations[currentIndex];
+    
+    // Start language interval
+    languageInterval = setInterval(changeLanguage, 889);
+    
+    // Start fireworks loop
+    loop();
+    
+    // Remove listeners
+    document.removeEventListener('click', startExperience);
 }
 
-// Attempt to play as soon as possible
-window.addEventListener('DOMContentLoaded', playMusic);
-// Backup call just in case script loads after DOM is already loaded
-playMusic();
-
+document.addEventListener('click', startExperience);
