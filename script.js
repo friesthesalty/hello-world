@@ -334,7 +334,18 @@ class Particle {
                 ctx.lineCap = 'round'; // Crucial: forces zero-velocity particles to render as circles instead of vanishing
                 ctx.moveTo(pStart.x, pStart.y);
                 ctx.lineTo(pEnd.x, pEnd.y);
-                ctx.strokeStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.brightness}%, ${this.alpha})`; 
+                
+                let dx = pEnd.x - pStart.x;
+                let dy = pEnd.y - pStart.y;
+                if (dx*dx + dy*dy > 0.01) { // Apply heavy gradient only if actually moving
+                    let grad = ctx.createLinearGradient(pStart.x, pStart.y, pEnd.x, pEnd.y);
+                    grad.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, ${this.brightness}%, 0)`); // fading tail
+                    grad.addColorStop(1, `hsla(${this.hue}, ${this.saturation}%, ${this.brightness + 30}%, ${this.alpha})`); // blazing super-hot leading drop
+                    ctx.strokeStyle = grad; 
+                } else {
+                    ctx.strokeStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.brightness}%, ${this.alpha})`; 
+                }
+                
                 ctx.lineWidth = Math.max(0.2, pEnd.scale * 2.5); // Thicker glow
                 ctx.stroke();
             }
