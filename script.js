@@ -100,12 +100,17 @@ window.addEventListener('resize', () => {
 const particles = [];
 const fireworks = [];
 const sparks = [];
+const constellationNodes = [];
 let cameraX = 0, cameraY = 0, cameraZ = 0;
 let cameraYaw = 0, camPitch = 0;
 const fl = 400; // Focal length
 
 let framesSinceLastLaunch = 0;
 let nextLaunchDelay = 30; // Initialize standard pacing
+
+let framesSinceLastConstellation = 0;
+let nextConstellationDelay = Math.random() * 200 + 150; // Increased ambient generation pacing
+let constellationDeck = []; // Mathematical shuffle bag guaranteeing zero geometric repetitions before a full cycle
 
 function project(worldX, worldY, worldZ) {
     // Relative to the center of the scene (average depth ~400)
@@ -147,6 +152,91 @@ const fwColors = [
     {h: 280, s: 100, l: 50},  // Pure Violet
     {h: 0, s: 100, l: 100}    // Pure White
 ];
+
+const constellationShapes = [
+    // Heart (Closed path)
+    [[[0, -1], [-1, -2], [-2, -2], [-3, -1], [-3, 0], [-2, 1], [-1, 2], [0, 3], [1, 2], [2, 1], [3, 0], [3, -1], [2, -2], [1, -2], [0, -1]]],
+    // Star (Closed path)
+    [[[0, -3], [-1, -1], [-3, -1], [-1.5, 0.5], [-2, 2.5], [0, 1.5], [2, 2.5], [1.5, 0.5], [3, -1], [1, -1], [0, -3]]],
+    // Smiley (Three separate independent drawing paths)
+    // Big Dipper (Open path)
+    [[[-5,-2], [-3,-1], [-1,-0.5], [1,-0.5], [1,1.5], [3,2.5], [4,0.5], [1,-0.5]]],
+    // Primogem / Diamond (Outer and Inner diamond loops)
+    [
+        [[0,-3], [1.5,-1], [3,0], [1.5,1], [0,3], [-1.5,1], [-3,0], [-1.5,-1], [0,-3]],
+        [[0,-1.5], [0.8,-0.5], [1.5,0], [0.8,0.5], [0,1.5], [-0.8,0.5], [-1.5,0], [-0.8,-0.5], [0,-1.5]]
+    ],
+    // Open Book (Front facing view)
+    [
+        [[-4,-2], [0,-1], [4,-2], [4,2], [0,3], [-4,2], [-4,-2]], // Bounding outline dipping deeply into the middle spine
+        [[0,-1], [0,3]], // Central spine trace
+        [[-2,-1.5], [-2,2.5]], // Left inner page fold
+        [[2,-1.5], [2,2.5]] // Right inner page fold
+    ],
+    // Snowflake (Intersecting radials and frozen V-tips)
+    [
+        [[0, -4], [0, 4]], // Vertical trunk
+        [[-3, -2], [3, 2]], // Slash
+        [[-3, 2], [3, -2]], // Backslash
+        [[-1,-3], [0,-4], [1,-3]], // Top tick
+        [[-1, 3], [0, 4], [1, 3]], // Bottom tick
+        [[-3,-1], [-3,-2], [-2,-2]], // Top-Left tick
+        [[3,-1], [3,-2], [2,-2]], // Top-Right tick
+        [[-3, 1], [-3, 2], [-2, 2]], // Btm-Left tick
+        [[3, 1], [3, 2], [2, 2]] // Btm-Right tick
+    ],
+    // Aries Zodiac Symbol (Open Y-shaped ram horns over extended stalk)
+    [
+        [[0, 1], [0, -3]], // Center straight stalk
+        [[0, 1], [-1, 2], [-2, 2], [-3, 1], [-3, -1]], // Left horn swooping downward and stopping cleanly
+        [[0, 1], [1, 2], [2, 2], [3, 1], [3, -1]] // Right horn swooping downward
+    ]
+];
+
+const constellationNames = [
+    "Heart", 
+    "Star", 
+    "Big Dipper", 
+    "Primogem", 
+    "Open Book", 
+    "Snowflake", 
+    "Aries Zodiac Symbol"
+];
+
+class ConstellationNode {
+    constructor(x, y, z) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.hue = Math.random() < 0.5 ? 40 : 0; // Pure gold or bright white
+        this.saturation = Math.random() < 0.5 ? 100 : 0; 
+        this.brightness = Math.random() * 20 + 80;
+        this.alpha = 0;
+        this.phase = 'in'; // 'in', 'hold', 'out'
+        this.holdFrames = Math.floor(Math.random() * 200 + 400); // Persist deeply for 400-600 frames
+    }
+    update(index) {
+        if (this.phase === 'in') {
+            this.alpha += 0.015;
+            if (this.alpha >= 0.85) this.phase = 'hold'; // Captures ambient visual threshold significantly faster
+        } else if (this.phase === 'hold') {
+            this.holdFrames--;
+            if (this.holdFrames <= 0) this.phase = 'out';
+        } else if (this.phase === 'out') {
+            this.alpha -= 0.015;
+            if (this.alpha <= 0) constellationNodes.splice(index, 1);
+        }
+    }
+    draw() {
+        let p = project(this.x, this.y, this.z);
+        if (p.scale > 0 && p.depth > 0) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, Math.max(0.4, p.scale * 2.0), 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.brightness}%, ${this.alpha})`;
+            ctx.fill();
+        }
+    }
+}
 
 class Firework {
     constructor() {
@@ -258,17 +348,19 @@ class Particle {
         this.y = y;
         this.z = z;
         this.coordinates = [];
-        this.coordinateCount = 12;
-        if (type === 2) this.coordinateCount = 18;
-        while(this.coordinateCount--) {
+        this.isDense = (type === 2);
+        
+        let cCount = this.isDense ? 20 : 12; // Tuned heavy tails for dense fireworks
+        while(cCount--) {
             this.coordinates.push([this.x, this.y, this.z]);
         }
         
-        this.friction = 0.965; // Expands visibly for a solid ~80 frames before stopping
-        this.gravity = 0.05; 
+        this.friction = this.isDense ? 0.98 : 0.965; // High momentum cuts heavily through the atmosphere
+        this.gravity = this.isDense ? 0.08 : 0.05; // Plummets mathematically heavier
+        
         this.hue = hue + (Math.random() * 10 - 5);
         this.saturation = sat;
-        this.brightness = Math.random() * 20 + 50; 
+        this.brightness = Math.random() * 20 + (this.isDense ? 70 : 50); // Dense shells cast blindingly hotter
         this.alpha = 1;
         this.isDot = (type === 3 || type === 4); // Maps both 'spheres' and 'crackles' to Arc dot rendering instead of motion-line tails
         this.isCrackle = (type === 4);
@@ -276,9 +368,7 @@ class Particle {
         this.fallDelay = 100;
         this.decay = 0.0003; 
         
-        if (type === 2) { 
-            this.brightness = Math.random() * 10 + 60;
-        } else if (this.isCrackle) {
+        if (this.isCrackle) {
             this.fallDelay = Math.floor(Math.random() * 8 + 5); // Micro drop frame scaling
             this.friction = 0.84; // Destructive deceleration to halt them basically instantly
             this.hue = 35 + Math.random() * 10; // Burning gold cores
@@ -378,7 +468,8 @@ class Particle {
                     ctx.strokeStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.brightness}%, ${this.alpha})`; 
                 }
                 
-                ctx.lineWidth = Math.max(0.2, pEnd.scale * 2.5); // Thicker glow
+                let lineWidth = this.isDense ? 4.5 : 2.5; 
+                ctx.lineWidth = Math.max(0.2, pEnd.scale * lineWidth); // Imposes a thicker optical footprint
                 ctx.stroke();
             }
         }
@@ -387,7 +478,7 @@ class Particle {
 
 function createParticles(x, y, z, baseHue, type, baseSat) {
     let baseDecay = Math.random() * 0.005 + 0.002; 
-    let particleCount = type === 2 ? 60 : (type === 4 ? 90 : 150); 
+    let particleCount = type === 2 ? 50 : (type === 4 ? 90 : 150); 
     
     // Select 1 to 3 random assorted colors for this explosion
     let numColors = Math.floor(Math.random() * 3) + 1;
@@ -400,7 +491,7 @@ function createParticles(x, y, z, baseHue, type, baseSat) {
         availableColors.splice(index, 1);
     }
     
-    let baseSpeed = type === 2 ? 25 : (type === 4 ? 45 : 35); // Dragon eggs burst exceptionally fast initially
+    let baseSpeed = type === 2 ? 18 : (type === 4 ? 45 : 35); // Dense throws slower but heavier
     
     // Core distribution logic
     for (let i = 0; i < particleCount; i++) {
@@ -491,12 +582,99 @@ function loop(timestamp) {
         sparks[k].update(k);
     }
     
+    let c = constellationNodes.length;
+    while(c--) {
+        constellationNodes[c].draw();
+        constellationNodes[c].update(c);
+    }
+    
     framesSinceLastLaunch++;
     if (framesSinceLastLaunch >= nextLaunchDelay) {
         fireworks.push(new Firework());
         framesSinceLastLaunch = 0;
         // Strictly pace the next launch to occur consistently between 0.5 to 1.5 seconds from now
         nextLaunchDelay = Math.random() * 45 + 30; 
+    }
+    
+    framesSinceLastConstellation++;
+    if (framesSinceLastConstellation >= nextConstellationDelay) {
+        
+        // Populate the geometric string array cleanly mimicking a flawless drawing cycle
+        if (constellationDeck.length === 0) {
+            for (let i = 0; i < constellationShapes.length; i++) constellationDeck.push(i);
+            
+            // Fisher-Yates algorithmic array shuffle matrix
+            for (let i = constellationDeck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [constellationDeck[i], constellationDeck[j]] = [constellationDeck[j], constellationDeck[i]];
+            }
+        }
+        
+        // Exhaust the array mathematically one by one without any collisions
+        let shapeIndex = constellationDeck.pop();
+        let layout = constellationShapes[shapeIndex];
+        
+        console.log(`[Constellation Engine] Synthesizing 3D Geometry: ${constellationNames[shapeIndex]}`);
+        
+        // Push heavily into the Z axis horizon, and arbitrarily place along the XY viewplane
+        let startZ = cameraZ + 1200; // Render significantly closer to the camera limits
+        let startX = (Math.random() * cw * 1.5) - cw * 0.25; 
+        let startY = (Math.random() * ch * 1.5) - ch * 0.25; 
+        
+        let multiplier = 55; // Inter-dot scaling
+        
+        let pitch = (Math.random() - 0.5) * 1.5; // X-axis spatial rotation
+        let yaw   = (Math.random() - 0.5) * 1.5; // Y-axis spatial rotation
+        let roll  = (Math.random() - 0.5) * Math.PI; // Z-axis geometric roll
+        
+        let injectDot = (rx, ry, rz) => {
+            // Geometric vectors preserved cleanly without artificial vibration for 100% straight trace lines
+
+            let x1 = rx * Math.cos(roll) - ry * Math.sin(roll);
+            let y1 = rx * Math.sin(roll) + ry * Math.cos(roll);
+            let z1 = rz;
+            
+            let y2 = y1 * Math.cos(pitch) - z1 * Math.sin(pitch);
+            let z2 = y1 * Math.sin(pitch) + z1 * Math.cos(pitch);
+            let x2 = x1;
+            
+            let x3 = x2 * Math.cos(yaw) - z2 * Math.sin(yaw);
+            let z3 = x2 * Math.sin(yaw) + z2 * Math.cos(yaw);
+            let y3 = y2;
+            
+            constellationNodes.push(new ConstellationNode(startX + x3, startY + y3, startZ + z3));
+        };
+        
+        // Trace paths drawing mathematically perfect dotted lines via geometric linear interpolation
+        layout.forEach(path => {
+            if (path.length === 1) {
+                // Standalone dots (like smiley eyes)
+                injectDot(path[0][0] * multiplier, path[0][1] * multiplier, 0);
+            } else {
+                for (let i = 0; i < path.length - 1; i++) {
+                    let p1 = path[i];
+                    let p2 = path[i + 1];
+                    let dx = p2[0] - p1[0];
+                    let dy = p2[1] - p1[1];
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    let dots = Math.floor(dist * 2.5); // Density constraint: 2.5 nodes per unit to force wider empty gaps
+                    if (dots < 1) dots = 1;
+
+                    for (let d = 0; d < dots; d++) {
+                        let t = d / dots;
+                        let lx = p1[0] + dx * t;
+                        let ly = p1[1] + dy * t;
+                        injectDot(lx * multiplier, ly * multiplier, 0);
+                    }
+                }
+                // Securely anchor the terminal trailing dot layout boundary
+                let lastP = path[path.length - 1];
+                injectDot(lastP[0] * multiplier, lastP[1] * multiplier, 0);
+            }
+        });
+        
+        framesSinceLastConstellation = 0;
+        nextConstellationDelay = Math.random() * 200 + 200; // Increased ambient pacing back up to approx 5 seconds
     }
 }
 
