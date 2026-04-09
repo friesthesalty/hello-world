@@ -152,7 +152,7 @@ class Firework {
     constructor() {
         this.x = (Math.random() * cw * 1.2) - cw * 0.1; // Wider arbitrary positions
         this.y = ch + 100; // Start below screen
-        this.z = (Math.random() * 1000) + 800; // Pushed much further away
+        this.z = cameraZ + (Math.random() * 1000) + 800; // Always spawn firmly ahead of the constantly flying camera
         this.sx = this.x;
         this.sy = this.y;
         this.sz = this.z;
@@ -184,7 +184,7 @@ class Firework {
         this.hue = color.h;
         this.saturation = color.s;
         this.brightness = color.l + (Math.random() * 10 - 5);
-        this.type = Math.floor(Math.random() * 4); // 0 = standard, 1 = double, 2 = dense, 3 = dot spheres
+        this.type = Math.floor(Math.random() * 5); // 0=std, 1=dbl, 2=dense, 3=dots, 4=dragon egg crackle
     }
     update(index) {
         this.coordinates.pop();
@@ -270,13 +270,22 @@ class Particle {
         this.saturation = sat;
         this.brightness = Math.random() * 20 + 50; 
         this.alpha = 1;
-        this.isDot = (type === 3);
+        this.isDot = (type === 3 || type === 4); // Maps both 'spheres' and 'crackles' to Arc dot rendering instead of motion-line tails
+        this.isCrackle = (type === 4);
         
         this.fallDelay = 100;
         this.decay = 0.0003; 
         
         if (type === 2) { 
             this.brightness = Math.random() * 10 + 60;
+        } else if (this.isCrackle) {
+            this.fallDelay = Math.floor(Math.random() * 8 + 5); // Micro drop frame scaling
+            this.friction = 0.84; // Destructive deceleration to halt them basically instantly
+            this.hue = 35 + Math.random() * 10; // Burning gold cores
+            this.brightness = 55; 
+            this.decay = 0; // Handled rigidly inside the fuse loop
+            this.fuse = this.fallDelay + Math.random() * 15 + 5; // Very rapid pop threshold
+            this.popped = false;
         }
 
         // Structured geometric velocity supplied by Fibonacci logic
@@ -304,14 +313,35 @@ class Particle {
         if (this.fallDelay > 0) {
             this.fallDelay--; // Phase 1: Only outward expansion. No gravity, no fading!
         } else {
-            // Phase 2: Suddenly apply gravity and begin geometrically accelerating the fade-out!
-            this.vy += this.gravity; 
-            
-            this.decay *= 1.04; // Slightly gentler geometric curve so falling is visible before blackout
-            this.alpha -= this.decay;
+            // Phase 2: Suddenly apply gravity and begin fading
+            if (!this.isCrackle) { // Crackle eggs don't fall, they hover and snap
+                this.vy += this.gravity; 
+                this.decay *= 1.04; 
+                this.alpha -= this.decay;
+            }
         }
         
-        if (this.alpha <= this.decay) {
+        if (this.isCrackle) {
+            if (this.fallDelay <= 0) {
+                // Sizzle aggressively while cooking mid-air!
+                if (Math.random() < 0.12 && !this.popped) {
+                    sparks.push(new Spark(this.x, this.y, this.z, 40, 100, 100)); // Dropping hot mini sparks
+                }
+                
+                this.fuse--;
+                if (this.fuse <= 0 && !this.popped) {
+                    // Detonation frame
+                    this.popped = true;
+                    this.brightness = 100; // Blinding flash
+                    this.saturation = 0; // Pure white hot
+                    this.decay = 0.35; // Nears instant deletion
+                    for(let s=0; s<14; s++) sparks.push(new Spark(this.x, this.y, this.z, 40, 80, 100)); // Massive shrapnel blast
+                }
+            }
+            if (this.popped) this.alpha -= this.decay;
+        }
+        
+        if (this.alpha <= this.decay && (!this.isCrackle || this.popped)) {
             particles.splice(index, 1);
         }
     }
@@ -325,8 +355,10 @@ class Particle {
 
         if (pEnd.scale > 0) {
             if (this.isDot) {
+                // Ensure crackles map drastically physically smaller sizes compared to full sphere dots
+                let sizeMult = this.isCrackle ? 1.0 : 3.5; 
                 ctx.beginPath();
-                ctx.arc(pEnd.x, pEnd.y, Math.max(0.8, pEnd.scale * 3.5), 0, Math.PI * 2);
+                ctx.arc(pEnd.x, pEnd.y, Math.max(0.4, pEnd.scale * sizeMult), 0, Math.PI * 2);
                 ctx.fillStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.brightness}%, ${this.alpha})`;
                 ctx.fill();
             } else if (pStart.scale > 0) {
@@ -355,7 +387,7 @@ class Particle {
 
 function createParticles(x, y, z, baseHue, type, baseSat) {
     let baseDecay = Math.random() * 0.005 + 0.002; 
-    let particleCount = type === 2 ? 60 : 150; 
+    let particleCount = type === 2 ? 60 : (type === 4 ? 90 : 150); 
     
     // Select 1 to 3 random assorted colors for this explosion
     let numColors = Math.floor(Math.random() * 3) + 1;
@@ -368,18 +400,31 @@ function createParticles(x, y, z, baseHue, type, baseSat) {
         availableColors.splice(index, 1);
     }
     
-    let baseSpeed = type === 2 ? 25 : 35; // Locked base burst speeds for absolute shell uniformity
+    let baseSpeed = type === 2 ? 25 : (type === 4 ? 45 : 35); // Dragon eggs burst exceptionally fast initially
     
-    // Core sphere via perfect Fibonacci geometric lattice
+    // Core distribution logic
     for (let i = 0; i < particleCount; i++) {
         let c = curatedColors[Math.floor(Math.random() * curatedColors.length)];
+        let vx, vy, vz;
         
-        let phi = Math.acos(1 - 2 * (i + 0.5) / particleCount);
-        let theta = Math.PI * (1 + Math.sqrt(5)) * i;
-        
-        let vx = baseSpeed * Math.sin(phi) * Math.cos(theta);
-        let vy = baseSpeed * Math.sin(phi) * Math.sin(theta);
-        let vz = baseSpeed * Math.cos(phi);
+        if (type === 4) {
+            // Chaotic arbitrary distribution for crackles, completely abandoning uniformity
+            let speed = (Math.random() * 0.8 + 0.2) * baseSpeed; // High velocity variance
+            let phi = Math.random() * Math.PI;
+            let theta = Math.random() * Math.PI * 2;
+            
+            vx = speed * Math.sin(phi) * Math.cos(theta);
+            vy = speed * Math.sin(phi) * Math.sin(theta);
+            vz = speed * Math.cos(phi);
+        } else {
+            // Perfect Fibonacci geometric lattice
+            let phi = Math.acos(1 - 2 * (i + 0.5) / particleCount);
+            let theta = Math.PI * (1 + Math.sqrt(5)) * i;
+            
+            vx = baseSpeed * Math.sin(phi) * Math.cos(theta);
+            vy = baseSpeed * Math.sin(phi) * Math.sin(theta);
+            vz = baseSpeed * Math.cos(phi);
+        }
         
         particles.push(new Particle(x, y, z, c.h, type, c.s, vx, vy, vz));
     }
@@ -417,9 +462,9 @@ function loop(timestamp) {
     cameraYaw = 0; // Removed panning side to side completely
     camPitch = 0; // Removed vertical pitching to eliminate any illusion of the scene rotating in space
     
-    // Eliminated camera translation to keep clusters locked
+    // Fly the camera continuously forward through the 3D depth space
     cameraX = 0;
-    cameraZ = 0;  
+    cameraZ += 1.5; // Steady horizontal forward progression
     cameraY = 0;  
 
     ctx.globalCompositeOperation = 'destination-out';
@@ -466,6 +511,10 @@ function startExperience() {
     // Play music
     bgMusic.play().catch(e => console.log("Audio play failed:", e));
     
+    // Fade out title placeholder
+    const prompt = document.getElementById("title-prompt");
+    if (prompt) prompt.classList.add("fade-out");
+    
     // Start initial language text
     currentIndex = getNextLanguageIndex();
     textElement.textContent = translations[currentIndex];
@@ -478,6 +527,81 @@ function startExperience() {
     
     // Remove listeners
     document.removeEventListener('click', startExperience);
+}
+
+// --- Title Prompt Fluid Ambient Setup ---
+const promptEl = document.getElementById("title-prompt");
+if (promptEl) {
+    // Split each line's text into independent wrapped letters
+    promptEl.querySelectorAll('p').forEach(p => {
+        const text = p.innerText;
+        p.innerHTML = text.split('').map(char => `<span class="prompt-char">${char === ' ' ? '&nbsp;' : char}</span>`).join('');
+    });
+
+    const chars = promptEl.querySelectorAll('.prompt-char');
+    
+    // Generate unique stochastic algorithmic parameters to permanently sever kerning string layout
+    const charMath = Array.from(chars).map(() => ({
+        f1: Math.random() * 0.4 + 0.1, // Subtle Y frequency
+        f2: Math.random() * 0.7 + 0.3, // Subtle Y interference
+        f3: Math.random() * 0.4 + 0.1, // Subtle X frequency
+        f4: Math.random() * 0.7 + 0.3, // Subtle X interference
+        phaseY: Math.random() * Math.PI * 2,
+        phaseX: Math.random() * Math.PI * 2,
+        ampY: Math.random() * 1.5 + 1.0, // Extremely subtle vertical drift boundaries
+        ampX: Math.random() * 2.0 + 0.5, // Subtle horizontal drift to visually separate letters from each other
+        alphaFreq: Math.random() * 0.3 + 0.1
+    }));
+    
+    let mouseX = -1000, mouseY = -1000;
+    
+    document.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+    });
+
+    let flowTime = 0;
+    function animateText() {
+        if (hasStarted) return; // Exit mathematical loop computationally cleanly
+        flowTime += 0.015; // Incredibly slow, subtle temporal tracking
+        
+        chars.forEach((char, index) => {
+            const rect = char.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            // Interaction distance relative to mouse
+            let dx = mouseX - centerX;
+            let dy = mouseY - centerY;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            
+            let p = charMath[index];
+            // Chaotic independent X/Y Brownian motion completely severs visual "joined rhythm"
+            let baseAlpha = Math.sin(p.alphaFreq * flowTime + p.phaseY) * 0.1 + 0.5; 
+            let baseY = (Math.sin(p.f1 * flowTime + p.phaseY) + Math.cos(p.f2 * flowTime - p.phaseY)) * p.ampY; 
+            let baseX = (Math.sin(p.f3 * flowTime + p.phaseX) + Math.cos(p.f4 * flowTime - p.phaseX)) * p.ampX; 
+            
+            // Interactive 90px interaction envelope
+            let maxDist = 90; 
+            if (dist < maxDist) {
+                let intensity = 1 - (dist / maxDist);
+                // Linear blend between the base wave and the supercharged proximity glow
+                char.style.color = `rgba(255, 255, 255, ${baseAlpha + intensity * (1 - baseAlpha)})`;
+                char.style.textShadow = `0 0 ${intensity * 12}px rgba(255, 255, 255, ${intensity * 0.8})`;
+                char.style.transform = `translate(${baseX}px, ${baseY - (intensity * 4)}px)`; 
+                char.style.transition = 'none'; 
+            } else {
+                // Default entirely to the completely autonomous drifting state
+                char.style.color = `rgba(255, 255, 255, ${baseAlpha})`;
+                char.style.textShadow = `none`;
+                char.style.transform = `translate(${baseX}px, ${baseY}px)`;
+                char.style.transition = 'none'; // Controlled physically by the 60fps loop 
+            }
+        });
+        requestAnimationFrame(animateText);
+    }
+    
+    animateText();
 }
 
 document.addEventListener('click', startExperience);

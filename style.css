@@ -1,5 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 
+@font-face {
+    font-family: 'autography';
+    src: url('autography.ttf') format('truetype'),
+         url('autography.otf') format('opentype');
+    font-weight: normal;
+    font-style: normal;
+}
+
 :root {
     --bg-color: #0b0d10;
     --text-color: #ffffff;
@@ -58,4 +66,104 @@ h1 {
     height: 100%;
     z-index: 0;
     pointer-events: none;
+}
+
+#title-prompt {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'autography', cursive; /* Custom handwritten typography */
+    font-size: 3rem;
+    font-weight: 400;
+    letter-spacing: 0.07em;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: opacity 0.4s ease-out;
+    z-index: 10;
+    white-space: nowrap;
+}
+
+#title-prompt p {
+    margin: 5px 0;
+}
+
+/* Base style for dynamically split letter strings */
+.prompt-char {
+    display: inline-block;
+    color: rgba(255, 255, 255, 0.4);
+    transition: all 0.3s ease-out;
+}
+
+#notes-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 5; /* Nestles exactly underneath the title prompt */
+    pointer-events: none;
+    overflow: hidden;
+    transition: opacity 0.5s ease;
+}
+
+.music-note {
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transform: translate(-50%, -50%) rotate(var(--rot));
+}
+
+.note-char {
+    display: block;
+    opacity: 0;
+    animation: drop-sink 8.5s ease-in-out forwards;
+}
+
+.music-note::before, .music-note::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2em; /* Proportional to font-size */
+    height: 2em;
+    border-radius: 50%;
+    /* Realistic glossy refraction rings */
+    border: 1.5px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 0 12px currentColor, inset 0 0 12px currentColor;
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* First water ripple ring */
+.music-note::before {
+    animation: water-ripple 6s cubic-bezier(0.1, 0.8, 0.3, 1) 2.5s forwards;
+}
+
+/* Second delayed water ripple ring */
+.music-note::after {
+    animation: water-ripple 6s cubic-bezier(0.1, 0.8, 0.3, 1) 3.5s forwards;
+}
+
+/* Simulate falling from top down onto water */
+@keyframes drop-sink {
+    0% { transform: scale(4) translateY(-15px); opacity: 0; filter: blur(3px); }
+    15% { transform: scale(1.5) translateY(-5px); opacity: 0.9; filter: blur(0px); }
+    40% { transform: scale(1) translateY(0); opacity: 0.9; } /* Touch down onto water surface */
+    70% { transform: scale(0.9) translateY(2px); opacity: 0.6; filter: blur(2px); }
+    100% { transform: scale(0.6) translateY(5px); opacity: 0; filter: blur(10px); } /* Fades deeply under water */
+}
+
+/* Realistic dual water ring expansion with inner/outer crest refractions */
+@keyframes water-ripple {
+    0% { transform: translate(-50%, -50%) scale(0.1); opacity: 1; border-width: 2px; }
+    50% { opacity: 0.4; border-width: 1px; }
+    100% { transform: translate(-50%, -50%) scale(4); opacity: 0; border-width: 0px; box-shadow: 0 0 35px currentColor, inset 0 0 35px currentColor; }
+}
+
+.fade-out {
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
